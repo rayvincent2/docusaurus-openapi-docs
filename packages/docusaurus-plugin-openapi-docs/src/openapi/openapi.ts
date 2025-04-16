@@ -226,6 +226,7 @@ function createItems(
       }
 
       const apiPage: PartialPage<ApiPageMetadata> = {
+        protocol: "http",
         type: "api",
         id: baseId,
         infoId: infoId ?? "",
@@ -370,6 +371,7 @@ function createItems(
       }
 
       const apiPage: PartialPage<ApiPageMetadata> = {
+        protocol: "http",
         type: "api",
         id: baseId,
         infoId: infoId ?? "",
@@ -541,10 +543,10 @@ function bindCollectionToApiItems(
   });
 }
 
-interface OpenApiFiles {
+export interface OpenApiFiles<Data = OpenApiObject> {
   source: string;
   sourceDirName: string;
-  data: OpenApiObject;
+  data: Data;
 }
 
 export async function readOpenapiFiles(

@@ -9,6 +9,7 @@ import fs from "fs";
 import path from "path";
 import zlib from "zlib";
 
+import { MaybeAsyncAPI } from "@asyncapi/parser/esm/types";
 import type { LoadContext, Plugin } from "@docusaurus/types";
 import { Globby, posixPath } from "@docusaurus/utils";
 import chalk from "chalk";
@@ -21,8 +22,11 @@ import {
   createSchemaPageMD,
   createTagPageMD,
 } from "./markdown";
-import { processOpenapiFiles, readOpenapiFiles } from "./openapi";
+import { readOpenapiFiles } from "./openapi";
+import { OpenApiFiles, processOpenapiFile } from "./openapi/openapi";
+import { OpenApiObject, TagGroupObject, TagObject } from "./openapi/types";
 import { OptionsSchema } from "./options";
+import { processAsyncApiFile } from "./parser/asyncapi";
 import generateSidebarSlice from "./sidebars";
 import type {
   ApiMetadata,
@@ -32,6 +36,7 @@ import type {
   LoadedContent,
   PluginOptions,
   SchemaPageMetadata,
+  SidebarOptions,
   TagPageMetadata,
 } from "./types";
 
@@ -112,6 +117,81 @@ export default function pluginOpenAPIDocs(
   let docRouteBasePath = docData ? docData.routeBasePath : undefined;
   let docPath = docData ? (docData.path ? docData.path : "docs") : undefined;
 
+  async function processApiFiles(
+    files: OpenApiFiles<OpenApiObject | MaybeAsyncAPI>[],
+    options: APIOptions,
+    sidebarOptions: SidebarOptions
+  ): Promise<[ApiMetadata[], TagObject[][], TagGroupObject[]]> {
+    const promises = files.map(async (file) => {
+      if (file.data !== undefined) {
+        let processedFile: Awaited<ReturnType<typeof processOpenapiFile>>;
+        if ((file.data as MaybeAsyncAPI).asyncapi) {
+          // Handle AsyncAPI
+          processedFile = await processAsyncApiFile(
+            file.data as MaybeAsyncAPI,
+            options,
+            sidebarOptions
+          );
+        } else {
+          // Handle OpenAPI (existing logic)
+          processedFile = await processOpenapiFile(
+            file.data as OpenApiObject,
+            options,
+            sidebarOptions
+          );
+        }
+
+        const itemsObjectsArray = processedFile[0].map((item) => ({
+          ...item,
+        }));
+        const tags = processedFile[1];
+        const tagGroups = processedFile[2];
+        return [itemsObjectsArray, tags, tagGroups];
+      }
+      console.warn(
+        chalk.yellow(
+          `WARNING: the following OpenAPI spec returned undefined: ${file.source}`
+        )
+      );
+      return [];
+    });
+    const metadata = await Promise.all(promises);
+    const items = metadata
+      .map(function (x) {
+        return x[0];
+      })
+      .flat()
+      .filter(function (x) {
+        // Remove undefined items due to transient parsing errors
+        return x !== undefined;
+      });
+
+    const tags = metadata
+      .map(function (x) {
+        return x[1];
+      })
+      .filter(function (x) {
+        // Remove undefined tags due to transient parsing errors
+        return x !== undefined;
+      });
+
+    const tagGroups = metadata
+      .map(function (x) {
+        return x[2];
+      })
+      .flat()
+      .filter(function (x) {
+        // Remove undefined tags due to transient parsing errors
+        return x !== undefined;
+      });
+
+    return [
+      items as ApiMetadata[],
+      tags as TagObject[][],
+      tagGroups as TagGroupObject[],
+    ];
+  }
+
   async function generateApiDocs(options: APIOptions, pluginId: any) {
     let {
       specPath,
@@ -139,7 +219,7 @@ export default function pluginOpenAPIDocs(
 
     try {
       const openapiFiles = await readOpenapiFiles(contentPath);
-      const [loadedApi, tags, tagGroups] = await processOpenapiFiles(
+      const [loadedApi, tags, tagGroups] = await processApiFiles(
         openapiFiles,
         options,
         sidebarOptions!

@@ -119,6 +119,7 @@ export interface ApiMetadataBase {
 
 export interface ApiPageMetadata extends ApiMetadataBase {
   json?: string;
+  protocol: "http" | "mqtt";
   type: "api";
   api: ApiItem;
   markdown?: string;
